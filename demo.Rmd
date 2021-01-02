@@ -1,0 +1,723 @@
+---
+title: "Shiny App Psychometrics"
+author: "Michal Kosinski"
+date: "2 1 2021"
+output:
+    html_document:
+      toc: TRUE
+      toc_float: TRUE
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(shinyWidgets)
+library(shinybusy)
+library(foreign)
+library(broom)
+library(officer)
+library(flextable)
+
+```
+
+# Introduction
+
+This is the Shiny RMarkdown presentation of psychometric mechanics functionality of psychological questionnaire platform in the form of ShinyApp. For the built-in account creation and ending notes of presentation please look into main RMarkdown document.
+
+# Psychometric mechanics {#Psych}
+
+The psychological studies are mainly conducted using single choice questions. In pen-and-paper forms the demographics questions are usually consisting of open and single select questions out of some categories (as for example: sex, gender, age, marital and occupational status, place of living etc), which are fairly straightforward to present in printed form.
+
+In my opinion, usually used Likert-scale single select items present in most psychological questionnaires that look the best are simulating the slider input layout. Unfortunately, we can often see much less successful implementations, such as boxes to write correct number in, top-down oriented lists of answers etc.
+
+The natural implementation for Likert-scale items in Shiny is `` `r "\u0060sliderTextInput()\u0060"` ``. It creates immediate reaction displaying the present value of the input, as well as the minimal and maximal diagnostic values on the sides.
+
+Below you can answer the modified (to match the context of ANY statistical software) version of SAQ (SPSS Anxiety Questionnaire) created and presented by Andy Field in his book *Discovering statistics using SPSS (2013)* to view mechanics of psychometric test in Shiny. 
+
+## Slider-based Likert style questions {#Psych1}
+
+As stated above, I find the slider to work best for psychological questionnaires. All below questions are created with below steps:
+
+1. Define slider choices for items
+
+```{r slider_choices_definition}
+
+likert_choices = c("Strongly disagree",
+                   "Disagree",
+                   "Neither",
+                   "Agree",
+                   "Strongly agree")
+
+
+```
+
+2. Create individual inputs
+
+```{r slider_example, eval = FALSE}
+
+sliderTextInput("item_ID",
+                label = "some label for item",
+        # to not show all the options
+                grid = FALSE, 
+        # these two are optional and contextual
+                force_edges = TRUE, 
+                width = 600,
+        # define the choices for items
+                choices = likert_choices,
+        # define starting position, most preferably as non-diagnostic value if applicable (uneven choices scale)
+                selected = likert_choices[3])
+
+
+```
+
+3. At the end of the questionnaire I find it useful to include a sincerity item to exclude at least consciously insincere answers, if the data is saved for study:
+
+```{r sincerity_example, eval = FALSE}
+
+# it's useful to define choices for sincerity questions too (especially if there are many questionnaires included in ShinyApp)
+
+sinc_choices <- list("I've mostly scoped the questions" = 1,
+                     "I've given the questions some read before answering" = 2,
+                     "I've read and answered accurately" = 3,
+                     "I've taken time to read carefully every question and answer very accurately" = 4)
+
+# Radio buttons seems to be match this question more than slider (as there are objectively BEST [4] and WORST [1] choices)
+
+radioButtons("sincerity",
+             label = "How accurate were your answers?",
+             choices = sinc_choices,
+      # it is best to assume not accurate answer if someone just scrolled down the questionnaire
+             selected = sinc_choices[1])
+
+```
+
+4. To conserve computational power it is best to render results after the participant answered all of the questions. The action button is good for that.
+
+```{r actionbutton example, eval = FALSE}
+
+actionButton("submit",
+             label = "Submit and compute results")
+
+```
+
+And now for the fun and not too long SAQ questionnaire.
+
+### Statistical Software Anxiety Questionnaire
+
+
+```{r SAQ_questionnaire, echo = FALSE}
+
+fluidPage(
+  tags$p("Below are some statements that could be made for one's experiences and thought of statistics and statistical software. Please answer how much could you agree with these statements, according to presented scale:",
+         tags$ol(tags$li("Strongly disagree"),
+                 tags$li("Disagree"),
+                 tags$li("Neither"),
+                 tags$li("Agree"),
+                 tags$li("Strongly agree"))),
+  sliderTextInput("SAQ_1",
+                label = "1. Statistics make me cry.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_2",
+                label = "2. My friends will think I'm stupid for not being able to cope with statistical software.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_3",
+                label = "3. Standard deviations excite me.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_4",
+                label = "4. I dream that Pearson is attacking me with correlation coefficients.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_5",
+                label = "5. I don't understand statistics.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_6",
+                label = "6. I have little experience of computers.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_7",
+                label = "7. All computers hate me.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_8",
+                label = "8. I have never been good at mathematics.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_9",
+                label = "9. My friends are better at statistics than me.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_10",
+                label = "10. Computers are useful only for playing games.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_11",
+                label = "11. I did badly at mathematics at school.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_12",
+                label = "12. People try to tell you that statistical software makes statistics easier to understand but it doesn't.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_13",
+                label = "13. I worry that I will cause irreparable damage because of my incompetence with computers.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_14",
+                label = "14. Computers have minds of their own and deliberately go wrong whenever I use them.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_15",
+                label = "15. Computers are out to get me.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_16",
+                label = "16. I weep openly at the mention of central tendency.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_17",
+                label = "17. I slip into a coma whenever I see an equation.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_18",
+                label = "18. Statistical software always crashes when I try to use it.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_19",
+                label = "19. Everybody looks at me when I use SPSS.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_20",
+                label = "20. I can't sleep for thoughts of eigenvectors.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_21",
+                label = "21. I wake up under my duvet thinking that I am trapped under a normal distribution.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_22",
+                label = "22. My friends are better at statistical software than I am.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+    sliderTextInput("SAQ_23",
+                label = "23. If I am good at statistics people will think I am a nerd.",
+                grid = FALSE, 
+                force_edges = TRUE, 
+                width = 400,
+                choices = likert_choices,
+                selected = likert_choices[3]),
+  
+  radioButtons("sincerity",
+             label = "How accurate were your answers?",
+             choices = list("I've mostly scoped the questions" = 1,
+                     "I've given the questions some read before answering" = 2,
+                     "I've read and answered accurately" = 3,
+                     "I've taken time to read carefully every question and answer very accurately" = 4),
+             selected = list("I've mostly scoped the questions" = 1)),
+  
+  tags$p("If you read and answered every above question, please press below button to compute your results (no result is send to any database!)",
+         tags$br(),
+         "Your results will be seen during the next paragraph of this document."),
+  
+     actionButton("submit",
+                  label = "Compute my results")
+  
+  
+)
+
+```
+
+## STEN scores computing {#Psych2}
+
+The best thing about Shiny App for psychological questionnaire is the instantaneous feedback for the user. For it to be created we need some norms to calculate STEN scores.
+
+The best way to do it is to have a large dataset of raw results. Fortunately, author of SAQ provided such database of 2571 observations as additional material in his book (and 2467 complete cases).
+
+```{r SAQ_data}
+
+## Data provided by Andy Field are saved in SPSS as factors and individual items. To wrangle the data I used my custom fuctions created some time ago for my psychometric work
+
+## First function is used to sum up items to scales
+
+calc_items_to_scale <- function(data, scales, values = c(1,5), mean = TRUE, na.rm = TRUE) {
+  
+  require(tidyverse)
+  
+  dataframe <- data
+  scalenames <- names(scales)
+  datascale <- scales
+  min_value <- values[1]
+  max_value <- values[2]
+  
+  scale_scores <- data.frame(id = c(1:nrow(dataframe)))
+  
+  for (scale in scalenames) {
+    
+    items <- unlist(strsplit(as.character(datascale[1, scale]), split = ", ", fixed = TRUE))
+    
+    to_reverse <- ifelse(grepl(items, pattern = "-", fixed = TRUE) == TRUE, TRUE, FALSE)
+    
+    items_names <- str_remove(items, "-")
+    
+    to_reverse_names <- items_names[to_reverse]
+    
+    raw_values_straight <- select(dataframe, all_of(items_names), -all_of(to_reverse_names))
+    
+    raw_values_reverse <- select(dataframe, all_of(to_reverse_names)) %>%
+      transmute_all(function(x){max_value + 1 - x})
+    
+    raw_values_all <- cbind(raw_values_straight, raw_values_reverse)
+    
+    if(mean == TRUE) {
+      scale_scores <- cbind(scale_scores, rowMeans(raw_values_all, na.rm = na.rm))
+      names(scale_scores)[ncol(scale_scores)] <- scale
+    } else {
+      scale_scores <- cbind(scale_scores, rowSums(raw_values_all, na.rm = na.rm))
+      names(scale_scores)[ncol(scale_scores)] <- scale
+    }
+    
+  }  
+  
+  return(scale_scores)
+  
+}
+
+## Second is the function to rename the variables from whichever form they take (as in there their names are in form of "Question n. Item label") to simpler form (in this case: "SAQ_n")
+
+rename_quest <- function(data, columns, abbreviation) {
+  
+  scale_length <- length(columns)
+  
+  new_names <- as.character()
+  
+  for(n in 1:scale_length) {
+    new_names[n] <- paste(abbreviation, n, sep = "_")
+    
+  }
+  
+  names(data)[columns] <- new_names
+  
+  return(data)
+}
+
+## Finally the main data loading and wrangling
+
+SAQ_data <- read.spss("SAQ.sav", to.data.frame = T)
+
+# function to change from factorial to numeric
+
+SAQ_mutate <- function(x){
+  
+  if_else(x == "Strongly agree", 5,
+          if_else(x == "Agree", 4,
+                  if_else(x == "Neither", 3,
+                          if_else(x == "Disagree", 2,
+                                  if_else(x == "Strongly disagree", 1, NULL)))))
+  
+  
+  
+}
+
+# mutate the factorial to numeric
+
+SAQ_data_mutated <- mutate_all(SAQ_data, .funs = SAQ_mutate)
+
+# I need only complete cases
+
+SAQ_data_2 <- SAQ_data_mutated[complete.cases(SAQ_data_mutated),]
+
+# I need better names of variables via rename_quest() function
+
+SAQ_data_2 <- rename_quest(SAQ_data_2,
+                           c(1:length(names(SAQ_data_2))),
+                           "SAQ")
+
+# This is an object for the 'scale' argument in items_to_scale function
+
+SAQ_scales = tibble(
+    # Fear of computers subscale
+  FoC = "SAQ_6, SAQ_7, SAQ_10, SAQ_13, SAQ_14, SAQ_15, SAQ_18",
+    # Fear of statistics subscale. Third item is reversed scored
+  FoS = "SAQ_1, -SAQ_3, SAQ_4, SAQ_5, SAQ_12, SAQ_16, SAQ_20, SAQ_21",
+    # Fear of mathematics
+  FoM = "SAQ_8, SAQ_11, SAQ_17",
+    # Peer evaluation subscale
+  PE = "SAQ_2, SAQ_9, SAQ_19, SAQ_22, SAQ_23",
+    # And overall score for the scale 
+  OS = "SAQ_1, SAQ_2, -SAQ_3, SAQ_4, SAQ_5, SAQ_6, SAQ_7, SAQ_8, SAQ_9, SAQ_10, SAQ_11, SAQ_12, SAQ_13, SAQ_14, SAQ_15, SAQ_16, SAQ_17, SAQ_18, SAQ_19, SAQ_20, SAQ_21, SAQ_22, SAQ_23")
+
+# Finally summing up the data via items_to_scale() function
+
+SAQ_summed = calc_items_to_scale(SAQ_data_2, SAQ_scales, mean = F)
+
+```
+
+With the data available for the scales it is now essential to create a way to identify raw scores by their STEN equivalent.
+
+It can be done using a general method of standardization into Z-score then transformed into STEN scale by providing its mean and standard deviation:
+
+
+![\frac{(x - M)}{SD}{2 + 5.5}](https://latex.codecogs.com/gif.latex?\frac{(x&space;-&space;M)}{SD}2&space;&plus;&space;5.5)
+
+Unfortunately, it creates problems when the results are highly skewed and the score is very low or high. 
+
+The better approach in my opinion is to calculate percentiles with cutoff ranges for STENs. I've done it by programming some more custom functions:
+
+```{r STEN_calculation}
+
+# first function calculate cutoff ranges
+
+calc_STEN_quantiles <- function(x){
+  
+  vector <- x
+  
+  borders <- quantile(x, c(0.023, 0.067, 0.159, 
+                           0.309, 0.501, 0.693, 
+                           0.843, 0.935, 0.979))
+  
+  as.numeric(borders)
+}
+
+# for our data it creates these values:
+
+SAQ_STEN_borders <- tibble(FoC = calc_STEN_quantiles(SAQ_summed$FoC),
+                           FoS = calc_STEN_quantiles(SAQ_summed$FoS),
+                           FoM = calc_STEN_quantiles(SAQ_summed$FoM),
+                           PE = calc_STEN_quantiles(SAQ_summed$PE),
+                           OS = calc_STEN_quantiles(SAQ_summed$OS))
+
+SAQ_STEN_borders
+
+# Second use the cutoff ranges to calculate STEN for user results
+
+calc_STENs <- function(score, borders){
+  
+  case_when(score <= borders[1] ~ 1,
+            score <= borders[2] ~ 2,
+            score <= borders[3] ~ 3,
+            score <= borders[4] ~ 4,
+            score <= borders[5] ~ 5,
+            score <= borders[6] ~ 6,
+            score <= borders[7] ~ 7,
+            score <= borders[8] ~ 8,
+            score <= borders[9] ~ 9,
+            score > borders[9] ~ 10)
+  
+}
+
+```
+
+As now everything is available for usage, it is time to calculate results from the above questionnaire.
+
+By using the reactive object it is possible to reuse the results for multiple outputs (table, plot, downloadable report etc.)
+
+```{r reactive results}
+
+SAQ_results <- eventReactive(input$submit,{
+  
+  #firstly, read the input values
+  
+  raw_data <- tibble(
+    
+    SAQ_1 = input$SAQ_1,   SAQ_2 = input$SAQ_2,   SAQ_3 = input$SAQ_3,
+    SAQ_4 = input$SAQ_4,   SAQ_5 = input$SAQ_5,   SAQ_6 = input$SAQ_6,
+    SAQ_7 = input$SAQ_7,   SAQ_8 = input$SAQ_8,   SAQ_9 = input$SAQ_9,
+    SAQ_10 = input$SAQ_10, SAQ_11 = input$SAQ_11, SAQ_12 = input$SAQ_12,
+    SAQ_13 = input$SAQ_13, SAQ_14 = input$SAQ_14, SAQ_15 = input$SAQ_15,
+    SAQ_16 = input$SAQ_16, SAQ_17 = input$SAQ_17, SAQ_18 = input$SAQ_18,
+    SAQ_19 = input$SAQ_19, SAQ_20 = input$SAQ_20, SAQ_21 = input$SAQ_21,
+    SAQ_22 = input$SAQ_22, SAQ_23 = input$SAQ_23
+    
+  ) %>%
+    mutate_all(.funs = SAQ_mutate)  # mutate inputs to numeric
+   
+  
+  # calculate raw scale scores
+  
+  raw_scales <- calc_items_to_scale(raw_data,
+                                    SAQ_scales,
+                                    mean = F)%>% 
+    gather(key = "Scale", value = "Raw_score", -id)
+  
+  # calculate STENs for raw scores
+  
+  STEN_scores <- tibble(FoC = calc_STENs(raw_scales[1,3],
+                                         SAQ_STEN_borders$FoC),
+                        FoS = calc_STENs(raw_scales[2,3],
+                                         SAQ_STEN_borders$FoS),
+                        FoM = calc_STENs(raw_scales[3,3],
+                                         SAQ_STEN_borders$FoM),
+                        PE = calc_STENs(raw_scales[4,3],
+                                        SAQ_STEN_borders$PE),
+                        OS = calc_STENs(raw_scales[5,3],
+                                        SAQ_STEN_borders$OS)) %>%
+    gather(key = "Scale", value = "STEN_score")
+  
+  # join everything then create classification
+  
+  fin_data <- full_join(raw_scales, STEN_scores, by = "Scale") %>%
+                        mutate(Class = case_when(STEN_score <= 2 ~ "very low",
+                                                 STEN_score <= 4 ~ "low",
+                                                 STEN_score <= 6 ~ "moderate",
+                                                 STEN_score <= 8 ~ "high",
+                                                 STEN_score > 8 ~ "very high"))
+  
+  fin_data$Scale <- factor(c("Fear of Computers", "Fear of Statistics",
+                             "Fear of Mathematics", "Peer Evaluation", "Overall Score"), 
+                           levels = c("Fear of Computers", "Fear of Statistics",
+                                      "Fear of Mathematics", "Peer Evaluation", "Overall Score"))
+  
+  return(fin_data)
+  
+})
+
+
+```
+
+And now, if you clicked the "Compute my results" above, below the table and plot for reporting should be generated.
+
+
+```{r reporting table and plot}
+
+renderTable(digits = 0,{
+    SAQ_results() %>%
+    select(-id, Scale,
+           "Raw score" = Raw_score, 
+           "STEN score" = STEN_score,
+           "STEN class" = Class)
+})
+
+renderPlot({
+  SAQ_results() %>%
+    ggplot(aes(y = STEN_score, fill = Class,
+               x = factor(Scale, 
+                        # levels need to be flipped because of the coord_flip() usage
+                          levels = c("Overall Score", "Peer Evaluation", "Fear of Mathematics",
+                                     "Fear of Statistics", "Fear of Computers")))) +
+      coord_flip() +
+      geom_col(color = "black") +
+      scale_fill_brewer(name = "STEN classification",
+                        palette = "Reds") +
+      scale_y_continuous(name = "STEN score", limits = c(0,10)) +
+      scale_x_discrete(name = "Scale") +
+      theme_minimal()
+})
+
+```
+So, how does it seem? *Are you afraid of Statistical Software? :)*
+
+## Downloading results for tests {#Psych3}
+
+After computing user's results, it can be seen on the screen during that ShinyApp visit. But it should be also possible to download the report, isn't it?
+
+I find it easiest to do utilizing the functionality of `` `r "\u0060officer\u0060"` `` package. It's a package for printing *.docx* documents with much flexibility. In my original app I define the function for printing reports outside of the `` `r "\u0060downloadHandler()\u0060"` `` by reading the results from googlesheets database (as the norms can be changed in later date, when more people will participate). In this ShinyMarkdown the results are not saved and external function seem to have some problems reading data from `` `r "\u0060reactive()\u0060"` ``, so I define the whole report from inside the `` `r "\u0060downloadHandler()\u0060"` `` call. 
+
+It should be noted that this report is very minimal - all scales should be described with regards to what the low and high score of each scale means. Moreover, the Download Button should be pressed only after pressing *Compute my results* button above for report to generate correctly (in ShinyApp it can be done by utilizing `` `r "\u0060conditionalPanel()\u0060"` `` to make sure the button is shown only after sending results).
+
+```{r download handler}
+
+  output$SAQ_download <- downloadHandler(
+    
+      #filename will be the name of the test and download date
+    
+    filename = function() {
+      paste0("SAQ_", Sys.Date(), ".docx")
+      },
+    
+      #the content will be the report created with officer package
+    
+  content = function(file) {
+    
+      #firstly, create the table with flextable package
+      
+  table <- SAQ_results() %>%
+              select(-id, Scale,
+                     "Raw score" = Raw_score, 
+                     "STEN score" = STEN_score,
+                     "STEN class" = Class) %>%
+    flextable() %>%
+    align(j = c(1:4), align = "center", part = "all") %>%
+    autofit()
+  
+      #secondly, the plot with ggplot2
+  
+  plot <- SAQ_results() %>%
+    ggplot(aes(y = STEN_score, fill = Class,
+               x = factor(Scale, 
+                        # levels need to be flipped because of the coord_flip() usage
+                          levels = c("Overall Score", "Peer Evaluation", "Fear of Mathematics",
+                                     "Fear of Statistics", "Fear of Computers")))) +
+      coord_flip() +
+      geom_col(color = "black") +
+      scale_fill_brewer(name = "STEN classification",
+                        palette = "Reds") +
+      scale_y_continuous(name = "STEN score", limits = c(0,10), breaks = seq(from = 0, to = 10, by = 2)) +
+      scale_x_discrete(name = "Scale") +
+      theme_minimal()
+  
+      #finally, it will all be put into word document
+  
+  read_docx() %>%
+    body_add_par("Your results of Statistical Software Anxiety Questionnaire", style = "heading 1") %>%
+    body_add_par(paste0("Downloaded on: ", Sys.Date())) %>%
+    body_add_par("Table", style = "heading 2") %>%
+    body_add_flextable(table) %>%
+    body_add_par("Plot", style = "heading 2") %>%
+    body_add_gg(plot) %>%
+    print(file)
+      
+    },
+  
+  contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  
+  )
+
+  inputPanel(downloadButton("SAQ_download",
+                           "Download *.docx"))
+
+
+```
+
+Now the participant got to know his results from the psychological test and have the report saved on his hard drive. The last magnificent thing that is left is to let him give the feedback to the author!
+
+## Feedback for researchers {#Psych3}
+
+This is a great tool to maximize the reliability of the test and its reporting. It is very hard to make something like that in non-electronic way - the social and/or authority pressure may be too high for some people to make any comments about the results they got.
+
+I've put it in my ShinyApp as a non-mandatory, optional modal dialog and it seems to be working very well. Be wary, though, that the non-mandatory nature is making it mostly negative feedback: people that find their results non-accurate seem to care the most about being heard after getting the tests done.
+
+```{r feedback_modal}
+
+observeEvent(input$modal,{
+  
+showModal(
+modalDialog(title = "How accurate you find these results?",
+            footer = tagList(actionButton("rel_bttn", "Send feedback"),
+                             modalButton("Cancel")),
+            tags$p("Please tell us how much do you agree with your results", 
+                   tags$br(),
+                   "Additionally, please select scales that you find results of the least accurate."),
+            
+     # Likert scales are good for this too :)
+            
+            sliderTextInput("rel_slider",
+                   label = "Do you agree with you results?",
+                   choices = likert_choices,
+                   selected = likert_choices[3],
+                   grid = F,
+                   force_edges = T,
+                   width = 500),
+            
+     # Maybe just some of our scale descriptions are wrong? Let the user give more information!
+            
+            pickerInput("rel_scales",
+                   label = "Which results are the least accurate?",
+                   multiple = T,
+                   choices = c(
+                        "Fear of Computers" = "FoC",
+                        "Fear of Statistics" = "FoS",
+                        "Fear of Mathematics" = "FoM",
+                        "Peer Evaluation" = "PE",
+                        "Overall Score" = "OS"
+                              )
+                        )
+           )
+         )
+})
+
+observeEvent(input$rel_bttn,{
+  
+  # there, we can add some function to send modal results to some kind of server
+  
+  # don't forget to show the user the results were saved!
+  updateActionButton(session,
+                     inputId = "modal",
+                     icon = icon("clipboard-check"),
+                     label = "Feedback sent!")
+  
+  removeModal()
+  
+})
+
+inputPanel(actionButton("modal",
+                        "Give us your feedback!"))
+
+```
+
+User feedback is one of the most valuable resource - both for businessess and researchers!
+
+# Summing up!
+
+This seems to be everything that I can show in regards of my psychological questionnaire platform in Shiny in reactive context. More features and its way of implementation is presented in the RMarkdown document that led you there. You can also see the original Shiny app [there](https://statismik.shinyapps.io/ShinyPsychTests).
+
+I hope it was at least somewhat interesting! :)

@@ -1,0 +1,428 @@
+---
+title: "Shiny psychological questionnaire platform"
+author: "Michal Kosinski"
+date: "2 01 2021"
+output:
+    html_document:
+      toc: TRUE
+      toc_float: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(shiny)
+```
+
+# Introduction
+
+Welcome to my presentation of Shiny-based psychological questionnaire platform. I chose to create this RMarkdown to present mechanics and coding of my fully working ShinyApp to english speakers (as the original is created fully in Polish and can be hard to navigate due to language barrier). Full code of the original App shouldn't be presented, as it contains credentials used to write and read from googlesheets via *googlesheets4* package - though you should be able see it running [there](https://statismik.shinyapps.io/ShinyPsychTests).
+
+# Psychometric mechanic
+
+Due to idle mechanics and timer of shinyapp.io platform the *Psychometric mechanics* are presented in [external, deployed ShinyRMarkdown]( https://statismike.shinyapps.io/demo/). In there you will see how to implement such functionalities as:
+
+* Slider-based Likert style questions
+* Automatic results computing via STEN scores
+* Downloading results for tests
+* Feedback for researchers
+
+All of these will be presented to you while also inviting to take the modified version of Andy Field's SPSS Anxiety Questionnaire (there broaden to be based around statistical software as a whole). The results will be then computed and you will be able to download them in form of *.docx document.
+
+# Build-in non-mandatory authentication
+
+I've found there to be some tools to implement login on a ShinyApp. Unfortunately, all of these found by me had some kind of flaw.
+
+* Log-in is mandatory
+* New account creation is impossible inside the App
+* Its implementation requires deploying you own server
+* They were too expensive
+
+All these pushed me into ambitious project for my experience in R programming (and especially Shiny - it was my first ShinyApp), namely: project a system that will be working for my specific needs myself. And I did.
+
+The system isn't ideal. It seems to be needing some tweaking for it to work better - but in all my users testing it seems to be working very sufficiently.
+
+## Reactive-based setup
+
+I've made a decision to hold whole database of my users inside a googlesheet on my secure drive. It makes extracting research data very straightforward - just log-in gdrive. Moreover, as it is continously saved, it won't be lost by any accident on Shiny server. Unfortunately, it comes with a price. 
+
+User database structure is consisting of three variables:
+
+1. date - timestamp when the account was created.
+2. user_id - in my App it is a working e-mail adress to warrant some form of contact with user (though they can be completely separate)
+3. user_pass - containing user scrypted password.
+
+Look into the scenario:
+
+1. ShinyApp is loadead as a new user want to use it. 
+2. **users database is loaded from googlesheet into reactiveVal**
+3. The new user is asked to optionally register new account.
+4. **data is send to googlesheet**
+5. Then, it is required for him to log-in. 
+
+But: new registered data isn't loaded. His newly-created account won't be found.
+
+We can force an app restart after creating account. *This won't do. It's too lazy*
+
+We can load the googlesheet before every log-in. *This won't do. It will generate unnecessary requests*
+
+We can load the googlesheet after every registration. *Not as crazy as above, but these requests will all be unnecessary*
+
+The correct answer how to remedy it was for me was a reactiveValues() object to which data from user database will be loaded at the start of every session. Then, after every data appending to googlesheets, data will be appended simultanously to the reactiveValues() object so all the data will be available at all times without additional reads.
+
+At this point the object is like that.
+
+```{r, eval = FALSE}
+
+user_db <- reactiveValues(data = 
+      as.data.frame(googlesheets4::read_sheet(ss = googlesheet,
+                                              sheet = "user_database"))
+
+```
+
+But then came the aspect of user forgetting his password. We will need a system to let him change it at every moment. It will then create a duplicate row in our users database - first with the old password, second with new one. So the filtering mechanism need to be used.
+
+```{r, eval = FALSE}
+
+user_db <- reactiveValues(data = 
+      as.data.frame(googlesheets4::read_sheet(ss = googlesheet,
+                                              sheet = "user_database")) %>%
+      arrange(desc(date)) %>%
+          group_by(user_id) %>%
+          slice_head() %>%
+          ungroup()
+
+```
+
+Now the base reactive setup is done. It will be growing later, but for now - will do.
+
+## Anonymous user
+
+In my ShinyApp the registration/log-in isn't mandatory: the user is logged as anonymous at the start of the application with the use of `` `r "\u0060reactiveVal()\u0060"` `` in the *server.R*:
+
+```{r eval = FALSE}
+
+active_user <- reactiveVal(paste("Anon", as.character(Sys.time()), sep = "_"))
+
+```
+
+The `` `r "\u0060active_user()\u0060"` `` value is used for every time there is some *user_id* needed (fe. while sending test results to the googlesheet database).
+
+## Registration method
+
+If the user wants to register a new account, he can do it in one of the tabs of the ShinyApp. In there he will see a layout similiar to the one below.
+
+```{r, echo = FALSE}
+
+inputPanel(
+
+textInput("name",
+          "Please enter your e-mail adress.",
+          width = "400px"),
+
+passwordInput("pass_1",
+              "Please enter you password",
+          width = "400px"),
+
+passwordInput("pass_2",
+              "Please repeat your password",
+          width = "400px"),
+
+actionButton("reg_button",
+             "Submit")
+)
+```
+
+After pressing the *Submit* button the `` `r "\u0060observeEvent()\u0060"` `` will check if:
+
+1. The first input is correct e-mail adress: if there aren't any spaces or breaks in it's value and if it contains @ value.
+  + Additionally it will transpose whole value into low keys, as the e-mail adressess aren't case sensitive (using `` `r "\u0060tolower()\u0060"` `` function)
+2. The second input is correct password: in my ShinyApp I found that some passwords are problematic for hashing package that I'm using (`` `r "\u0060scrypt\u0060"` ``). Therefore, I made it accept only passwords 8 to 20 alphanumeric characters long.
+3. The third input is the same as the second input.
+
+If any of checks aren't passed, the `` `r "\u0060modalDialog()\u0060"` `` detailing problem pops up. If the checks are passed, then it's time for creating new row in user database: both in googlesheets and reactiveValues.
+
+```{r eval = FALSE}
+
+new_user <- tibble(date = Sys.time(),
+                   user_id = as.character(tolower(input$username)),
+                   user_pass = as.character(
+                     scrypt::hashPassword(input$password)
+                     ) 
+
+googlesheets4::sheet_append(ss = app_db,
+                            sheet = "user_db",
+                            data = new_user)
+
+user_db$data <- rbind(user_db$data, new_user)
+
+                                          
+```
+
+Additionally, it can be helpful to send user an e-mail after registration - thanks to this you can verify if the address is valid, and the user will be given an external indication of this action. I use the `` `r "\u0060mailR\u0060"` `` package with gmail account for that. Function is localised in the same `` `r "\u0060observeEvent()\u0060"` `` as above.
+
+```{r, eval = FALSE}
+
+send.mail(from = "yourgmailtouse@gmail.com",
+          to = isolate(tolower(input$username)),
+          subject = "MyShinyApp - You have registered a new account!",
+          body = paste0("Hello, you registered new account!", "\n",
+                        "Make sure to use our App as long as you want!", "\n",
+                        "\nThis message is send automatically!"),
+          encoding = "utf-8",
+          smtp = list(host.name = "smtp.gmail.com", 
+                      port = 465,
+                      user.name="yourgmailtouse@gmail.com", 
+                      passwd="yourpassword", ssl=TRUE),
+          authenticate = TRUE,
+          send = TRUE)
+
+```
+
+
+As the new account has been created, it's time for the user to log-in!
+
+## Logging in
+
+Logging is very straightforward after making all of the work above. It needs some inputs for user to put in his account id and password. actionButton() is a trigger for next reactiveEvent() to check if both are correct. If it's the case the user will be logged, if it isn't - modalDialog() detailing the problem will pop up.
+
+The UI can look like that:
+```{r echo=FALSE}
+
+inputPanel(
+
+textInput("name",
+          "Please enter your e-mail adress.",
+          width = "400px"),
+
+passwordInput("pass",
+              "Please enter you password",
+          width = "400px"),
+
+actionButton("reg_button",
+             "Log-in")
+
+)
+```
+
+```{r eval = FALSE}
+
+login_data <- eventReactive(input$login_bttn, {
+    
+  # firstly check if user_db is in the reactiveValues database
+  
+    login_dat <- isolate(user_db$data %>%
+      filter(user_id == tolower(input$user_id)))
+  
+  # login_data() with value of "User_not_found" will trigger a non-existing user
+    
+  if(nrow(login_dat) == 0) {
+    tibble(status = "User_not_found")
+    
+  } else {
+    
+  # we can create temporary object to verify if everything is okay
+  
+    user_temp_dat <- tibble(status = "User_found",
+                            user_id = login_dat["user_id"],
+                            user_pass = login_dat["user_pass"],
+                            input_pass = input$user_pass)
+    
+  # next, check if the password is the same as in database
+    
+    if(scrypt::verifyPassword(
+      as.character(user_temp_dat$user_pass[1]), 
+      user_temp_dat$input_pass[1]) == T) {
+    
+  # if it's the same the login_data() will hold info about logged status and user_id
+      tibble(status = "User_logged",
+             user_id = login_dat["user_id"])
+      
+    } else {
+  
+  # if it's not the same, login_data() will hold info about Bad_pass.
+      tibble(status = "Bad_pass")
+    }
+  }
+  
+  })
+
+# next observe() will check what is the logged status and send correct information back to the user by modalDialog
+
+  observe({
+    
+    login_data <- login_data()
+    
+    # if username isn't in the database
+    
+    if(login_data$status == "User_not_found") {
+    
+    showModal(
+    modalDialog(title = tags$h2("Error"),
+                tags$h3("Username is not found.")))
+             }
+    
+    # if username and password match
+    
+    else if(login_data$status == "User_logged") {
+      
+    # active_user() reactiveVal is updated
+      
+      active_user(as.character(login_data$user_id))
+      
+      showModal(
+        modalDialog(title = tags$h2("Logged-in!"),
+                  tags$p("You are logged in now!")))
+      
+    # if password is incorrect
+      
+    } else if(login_data$status == "Bad_pass") {
+      
+      showModal(
+        modalDialog(title = tags$h2("Error"),
+                    tags$h3("Icorrect password"),
+                    tags$p("Try to type the password again.")))
+      
+    }
+  })
+
+```
+
+But what if user forgot the password? How to let him change it from inside the ShinyApp? Next paragraph will detail the solution to this problem.
+
+## Password reset
+
+To reset the password some kind of verification that the person trying to reset the password can access the e-mail account specified during registration. I guess the random number generation is sufficient enough for verification.
+
+But there we need to make a change to our reactive setup - we need to create a new object to hold our database of password reset codes in the similar vein as the user database. Password reset codes database consists of 3 variables:
+1. date - timestamp of password reset code generated
+2. user_id - which user_id it was generated for
+3. code - the 6 digits code for resetting password
+
+```{r, eval = FALSE}
+
+user_db <- reactiveValues(
+  data = as.data.frame(
+    googlesheets4::read_sheet(ss = app_db,
+                              sheet = "user_db")) %>%
+                              arrange(desc(date)) %>%
+                              group_by(user_id) %>%
+                              slice_head() %>%
+                              ungroup(),
+                          
+  remind = as.data.frame(
+    googlesheets4::read_sheet(ss = app_db,
+                              sheet = "remind_db")) %>%
+                              arrange(desc(date)) %>%
+                              group_by(user_id) %>%
+                              slice_head() %>%
+                              ungroup())
+
+```
+
+UI for password resetting need to have at least 2 parts. 
+
+Firstly, the user need to generate, receive and verify his 6-digits code for password reset. This part of UI can look like that:
+
+```{r echo = FALSE}
+
+inputPanel(
+textInput("user_id_remind",
+          "Username/e-mail (1st Input)"),
+actionButton("remind_bttn_1",
+             "Send 6-digits code"),
+textInput("reset_code",
+          "Paste you 6-digits code from e-mail message (2nd input)"),
+actionButton("remind_bttn_2",
+             "Confirm code")
+)
+```
+User put in his e-mail address in first input box and pushes first action button. That push activates observer, which checks if the e-mail is valid e-mail from the database, generates random 6-digits code and send it to the user e-mail and database - both in googlesheets and reactiveValues.
+
+```{r, eval = FALSE}
+
+code <- paste(floor(runif(6, min = 0, max = 10)), collapse = "")
+
+new_code_row <- tibble(date = Sys.time(), 
+                       user_id = input$user_id_remind,
+                       code = code)
+          
+googlesheets4::sheet_append(ss = app_db,
+                            sheet = "remind_db",
+                            data = new_code_row)
+          
+user_db$remind <- rbind(user_db$remind,
+                        new_code_row) %>%
+    arrange(desc(date)) %>%
+    group_by(user_id) %>%
+    slice_head(n = 1) %>%
+    ungroup()
+          
+mailR::send.mail(from = "yourmail@box",
+                 to = isolate(input$user_id_remind),
+                 subject = "ShinyApp-pass resetting code",
+                 body = paste0("Insert this code to reset password: ",
+                               isolate(as.character(code))),
+                 encoding = "utf-8",
+                 smtp = list(host.name = "smtp.gmail.com", 
+                             port = 465,
+                             user.name="yourmail@box", 
+                             passwd="yourpassword", 
+                             ssl=TRUE),
+                 authenticate = TRUE,
+                 send = TRUE)
+
+```
+After the user get his code in the e-mail message, he can then paste it into second input box and push another action button. It will cause the next observer to check if the code match the latest code in the reactive value.
+
+The the user can write into `` `r "\u0060modalDialog()\u0060"` `` new password with the same verification technique as during registration.
+
+# Summing up
+
+Code provided above should be enough for most applications, though it isn't copy-paste material for other ShinyApps. I think it is a good foundation for complex Shiny-based platforms. I hope that my descriptions are good enough for understanding the concepts - English is my second language at best. 
+
+As my biggest interest and skills are with psychometrics, I would like to detail why I found Shiny great for creating psychological questionnaires and why the account creation could be beneficial for both users and authors. Lastly, I will detail which R packages were used to create the original ShinyApp (and for which usability).
+
+## Why Shiny for psychological questionnaires?
+
+Most of used survey platforms are very limiting. Some of them actually make it possible for user to see "results" of the survey, but it always needs to be basic.
+
+Shiny is utilizing R for its computational possibilities - and they are great. You can data-wrangle on the spot and make it look instantaneous. Summing-up scales (like in my examples) are just most basic of possible calculations.  
+
+Moreover, after getting test results, users can give feedback back to the authors.
+
+Survey platforms don't give such options. Shiny can make it all work out - and even more: making some items random or even some tests random. It's great framework for creating even psychological experiments or quasi-experiments (as there are possibilities for semi-random actions).
+
+If we are aware of positives - let's as a question what are the negatives of ShinyApp in context of psychological questionnaires?
+
+Most glaring: it is more complex to create a ShinyApp than, for example: Google Form.
+
+After programming your ShinyApp, it isn't always free to deploy it. (https://shinyapps.io) for example offers some free time of usage (25h/month). When visited, ShinyApp process starts and stops only after some set time of idleness (lack of information send from UI to the server) - and this time window can't be set too low, or the App won't be usable. Alternatively, you can deploy a Shiny Server yourself, but it can generate even more costs - won't be beneficial unless you want to publish multiple Apps.
+
+## Why account creation is beneficial?
+
+Psychological questionnaires results are relative - you need to possess some kind of norms for the scoring to assess user's results as high or low. During the lifetime of ShinyApp the number of accumulated results will be adding up, so there will be more information to calculate the norms.
+
+Users using the application in it's maturity will have more reliable and accurate results. But what about the others?
+
+If some users create their accounts, it is fairly easy to allow them to recalculate their results from their past raw scores with new norms.
+
+Second, and even more beneficial way of usage is with adaptations of new measures. During the adaptation it is impossible to even identify scales. But when enough data is collected it becomes a possibility. Logged user, who gave data during the adaptation process, after the questionnaire is finally adapted can calculate their results from original raw scores.
+
+Users, who can get their feedback from application are more likely to participate in the study (and maybe even tell about it to their friend, making a snowball recrutation).
+
+## Used packages
+
+1. shiny - for creating the ShinyApp
+2. shinydashboard - gives more options for the UI look. Dashboards are great, because they allow for multiple tabs with easy access from sidebar menu and create interactive header, in which some additional elements can be placed (like a log-in indicator, as in my App)
+3. shinyWidgets - allows some more fancy input functions, such as sliderTextInput(), which are used for Likert scales in my app.
+4. shinybusy - creates great indicators for busy session: if there is some kind of rendering going on (fe: downloadHandler renders a document for download) you can non-intrusively tell it to the user
+5. googlesheets4 - allows to read from and write into googlesheets documents. This kind of database makes it very ease to access it from your account.
+6. officer - for generating downloadable reports in *.docx form.
+7. shinyjs - for handling some JavaScript. It wasn't supported in my presentation.
+8. tidyverse- for data wrangling and visualization (ggplot2). Very useful in general.
+9. xlsx - for reading and writing into *.xlsx documents. It wasn't supported in my presentation.
+10. foreign - for reading and writing into many foreign formats, for example *.sav of SPSS origins.
+11. scrypt - for handling user passwords. Even though they are in private googlesheets database, it is better to be safe than sorry, isn't it?
+12. flextable - for creating good-looking tables. Have great synergy with officer.
+13. lubridate - supports operations on dates. It wasn't supported in my presentation.
+14. mailR - makes sending e-mails from into R very easy!
