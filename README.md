@@ -1,0 +1,2 @@
+# ShinyPsychTestPresentation
+Presentation of Psychological Questionnaire Platform ShinyApp
